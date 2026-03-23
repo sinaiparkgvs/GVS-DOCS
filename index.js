@@ -149,19 +149,23 @@ if (SPACES_REGION && SPACES_ENDPOINT && SPACES_BUCKET && SPACES_KEY && SPACES_SE
 // --------------------------------
 // 7) QR endpoint
 // --------------------------------
-app.get("/IFU/:slug", async (req, res) => {
+app.get("/:fileType/:itemcode", async (req, res) => {
   try {
     if (!pool) return res.status(500).send("DB not configured (missing DATABASE_URL)");
     if (!s3) return res.status(500).send("Spaces not configured (missing SPACES_* env vars)");
 
-    const slug = req.params.slug;
-
+    const values = [req.params.itemcode, req.params.fileType ] ; 
     // TODO: sostituisci con la tua query reale
     const query = `
-      SELECT 'Products/02-800-CE - RPB Astro.pdf' as spaces_key
-      LIMIT 1;
+      SELECT storage_path as spaces_key
+      from product_files
+      where codint = $1
+            AND file_type = $2
+            AND active = 'Y'
+            ORDER BY version DESC
+            LIMIT 1;
     `;
-    const result = await pool.query(query /*, [slug]*/);
+    const result = await pool.query(query , values );
 
     if (result.rowCount === 0) return res.status(404).send("Document not found");
 
@@ -170,6 +174,7 @@ app.get("/IFU/:slug", async (req, res) => {
     const command = new GetObjectCommand({
       Bucket: SPACES_BUCKET,
       Key: spaces_key,
+      ResponseContentDisposition: "inline", // 👈 force browser to open
     });
 
     const signedUrl = await getSignedUrl(s3, command, {
@@ -179,10 +184,49 @@ app.get("/IFU/:slug", async (req, res) => {
 
     return res.redirect(302, signedUrl);
   } catch (err) {
-    console.error("❌ /IFU/:slug error:", err);
+    console.error("❌ /:fileType/:itemcode error:", err);
     return res.status(500).send("Internal server error");
   }
 });
+
+
+// // --------------------------------
+// // 7) QR endpoint
+// // --------------------------------
+// app.get("/IFU/:slug", async (req, res) => {
+//   try {
+//     if (!pool) return res.status(500).send("DB not configured (missing DATABASE_URL)");
+//     if (!s3) return res.status(500).send("Spaces not configured (missing SPACES_* env vars)");
+
+//     const slug = req.params.slug;
+
+//     // TODO: sostituisci con la tua query reale
+//     const query = `
+//       SELECT 'Products/02-800-CE - RPB Astro.pdf' as spaces_key
+//       LIMIT 1;
+//     `;
+//     const result = await pool.query(query /*, [slug]*/);
+
+//     if (result.rowCount === 0) return res.status(404).send("Document not found");
+
+//     const { spaces_key } = result.rows[0];
+
+//     const command = new GetObjectCommand({
+//       Bucket: SPACES_BUCKET,
+//       Key: spaces_key,
+//     });
+
+//     const signedUrl = await getSignedUrl(s3, command, {
+//       expiresIn: 60 * 10,
+//       unhoistableHeaders: new Set(["x-amz-checksum-mode"]),
+//     });
+
+//     return res.redirect(302, signedUrl);
+//   } catch (err) {
+//     console.error("❌ /IFU/:slug error:", err);
+//     return res.status(500).send("Internal server error");
+//   }
+// });
 
 // --------------------------------
 // 8) Start server (App Platform)
